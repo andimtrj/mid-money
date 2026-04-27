@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { AuthInvalidCredentialsModal } from "./AuthInvalidCredentialsModal";
 
 export function AuthScreen({
   onLogin,
@@ -22,12 +23,37 @@ export function AuthScreen({
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [showInvalidCredentialsModal, setShowInvalidCredentialsModal] = useState(false);
+
+  const invalidCredentialsMessage = useMemo(() => {
+    if (!error) return null;
+    const normalized = error.toLowerCase();
+    const matchesInvalidCredentials =
+      normalized.includes("invalid login credentials") ||
+      normalized.includes("invalid credentials") ||
+      normalized.includes("user already registered") ||
+      normalized.includes("already registered");
+
+    if (!matchesInvalidCredentials) return null;
+
+    return normalized.includes("already registered")
+      ? "This email is already registered. Sign in instead or use another email."
+      : "The email or password is incorrect. Please try again.";
+  }, [error]);
+
+  useEffect(() => {
+    if (invalidCredentialsMessage) {
+      setShowInvalidCredentialsModal(true);
+    }
+  }, [invalidCredentialsMessage]);
 
   const canSubmit = Boolean(
     mode === "login"
       ? email && password
       : email && username && password && password === confirm,
   );
+
+  const inlineError = error && !invalidCredentialsMessage ? error : null;
 
   const submit = async () => {
     if (!canSubmit || loading) return;
@@ -53,12 +79,12 @@ export function AuthScreen({
         <p className="mt-4 text-neutral-500 tracking-wide" style={{ fontSize: 13 }}>
           {mode === "login" ? "Sign in to continue tracking." : "A quieter way to manage money."}
         </p>
-        {(notice || error) && (
+        {(notice || inlineError) && (
           <p
-            className={`mt-4 tracking-wide ${error ? "text-red-600" : "text-neutral-500"}`}
+            className={`mt-4 tracking-wide ${inlineError ? "text-red-600" : "text-neutral-500"}`}
             style={{ fontSize: 12 }}
           >
-            {error ?? notice}
+            {inlineError ?? notice}
           </p>
         )}
       </div>
@@ -104,6 +130,12 @@ export function AuthScreen({
           </span>
         </button>
       </div>
+
+      <AuthInvalidCredentialsModal
+        open={showInvalidCredentialsModal}
+        onOpenChange={setShowInvalidCredentialsModal}
+        description={invalidCredentialsMessage ?? undefined}
+      />
     </div>
   );
 }
