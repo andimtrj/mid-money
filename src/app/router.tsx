@@ -92,7 +92,7 @@ function LoadingAuthMessage() {
 }
 
 function TransactionSheetOutlet() {
-  const { addOpen, setAddOpen, categories, addTransaction, addCategory } = useAppState();
+  const { addOpen, setAddOpen, categories, pockets, addTransaction, addCategory } = useAppState();
 
   return (
     <TransactionSheet
@@ -101,6 +101,7 @@ function TransactionSheetOutlet() {
       onSave={addTransaction}
       onAddCategory={addCategory}
       categories={categories}
+      pockets={pockets}
     />
   );
 }
@@ -122,7 +123,7 @@ function BottomNavOutlet() {
 }
 
 function HomeRoute() {
-  const { name, wallet, transactions, categories, fixedIncomes, fixedExpenses, setAddOpen } = useAppState();
+  const { name, wallet, transactions, pockets, setAddOpen } = useAppState();
   const navigate = useNavigate();
 
   return (
@@ -130,9 +131,7 @@ function HomeRoute() {
       name={name ?? "friend"}
       wallet={wallet}
       transactions={transactions}
-      categories={categories}
-      fixedIncomes={fixedIncomes}
-      fixedExpenses={fixedExpenses}
+      pockets={pockets}
       onAdd={() => setAddOpen(true)}
       onSeeAll={() => navigate("/app/transactions")}
     />
@@ -143,41 +142,33 @@ function BudgetRoute() {
   const {
     categories,
     wallet,
-    fixedIncomes,
-    fixedExpenses,
+    pockets,
     addCategory,
     deleteCategory,
     setWallet,
-    addFixedIncome,
-    updateFixedIncome,
-    deleteFixedIncome,
-    addFixedExpense,
-    updateFixedExpense,
-    deleteFixedExpense,
+    addPocket,
+    updatePocket,
+    deletePocket,
   } = useAppState();
 
   return (
     <BudgetScreen
       categories={categories}
       wallet={wallet}
-      fixedIncomes={fixedIncomes}
-      fixedExpenses={fixedExpenses}
+      pockets={pockets}
       onAddCategory={addCategory}
       onDeleteCategory={deleteCategory}
       onUpdateWallet={setWallet}
-      onAddFixedIncome={addFixedIncome}
-      onUpdateFixedIncome={updateFixedIncome}
-      onDeleteFixedIncome={deleteFixedIncome}
-      onAddFixedExpense={addFixedExpense}
-      onUpdateFixedExpense={updateFixedExpense}
-      onDeleteFixedExpense={deleteFixedExpense}
+      onAddPocket={addPocket}
+      onUpdatePocket={updatePocket}
+      onDeletePocket={deletePocket}
     />
   );
 }
 
 function AnalyticsRoute() {
-  const { categories, transactions, fixedIncomes, fixedExpenses } = useAppState();
-  return <AnalyticsScreen categories={categories} transactions={transactions} fixedIncomes={fixedIncomes} fixedExpenses={fixedExpenses} />;
+  const { pockets, transactions } = useAppState();
+  return <AnalyticsScreen pockets={pockets} transactions={transactions} />;
 }
 
 function ProfileRoute() {
@@ -196,13 +187,13 @@ function ProfileRoute() {
 }
 
 function AllTransactionsRoute() {
-  const { transactions, categories, updateTransaction, deleteTransaction } = useAppState();
+  const { transactions, pockets, updateTransaction, deleteTransaction } = useAppState();
   const navigate = useNavigate();
 
   return (
     <AllTransactionsScreen
       transactions={transactions}
-      categories={categories}
+      pockets={pockets}
       onClose={() => navigate("/app/home")}
       onUpdate={updateTransaction}
       onDelete={deleteTransaction}

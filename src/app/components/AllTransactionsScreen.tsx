@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Trash2, Repeat, X } from "lucide-react";
-import type { Category, Transaction } from "./types";
+import { ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Trash2, X } from "lucide-react";
+import type { Pocket, Transaction } from "./types";
 import { formatIDR } from "./types";
 import { NumberPad } from "./NumberPad";
 
 export function AllTransactionsScreen({
   transactions,
-  categories,
+  pockets,
   onClose,
   onUpdate,
   onDelete,
 }: {
   transactions: Transaction[];
-  categories: Category[];
+  pockets: Pocket[];
   onClose: () => void;
   onUpdate: (id: string, patch: Partial<Pick<Transaction, "amount" | "date" | "note">>) => void;
   onDelete: (id: string) => void;
@@ -31,7 +31,7 @@ export function AllTransactionsScreen({
     return Array.from(map.entries());
   }, [transactions]);
 
-  const catName = (id: string) => categories.find((c) => c.id === id)?.name ?? "—";
+  const getPocketName = (id: string | undefined) => pockets.find((p) => p.id === id)?.name ?? "—";
 
   return (
     <motion.div
@@ -72,8 +72,9 @@ export function AllTransactionsScreen({
                     </div>
                     <button onClick={() => setEditing(t)} className="flex-1 text-left min-w-0">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-neutral-900 truncate" style={{ fontSize: 13 }}>{catName(t.categoryId)}</span>
-                        {t.fixed && <Repeat size={10} strokeWidth={1.8} className="text-neutral-400 shrink-0" />}
+                        <span className="text-neutral-900 truncate" style={{ fontSize: 13 }}>
+                          {t.type === "income" ? "Income" : `Pocket: ${getPocketName(t.pocketId)}`}
+                        </span>
                       </div>
                       {t.note && (
                         <div className="text-neutral-500 truncate" style={{ fontSize: 11 }}>{t.note}</div>
@@ -93,7 +94,7 @@ export function AllTransactionsScreen({
       {editing && (
         <EditSheet
           transaction={editing}
-          categoryName={catName(editing.categoryId)}
+          displayName={editing.type === "income" ? "Income" : `Pocket: ${getPocketName(editing.pocketId)}`}
           onClose={() => setEditing(null)}
           onSave={(patch) => {
             onUpdate(editing.id, patch);
@@ -121,13 +122,13 @@ function formatDay(s: string) {
 
 function EditSheet({
   transaction,
-  categoryName,
+  displayName,
   onClose,
   onSave,
   onDelete,
 }: {
   transaction: Transaction;
-  categoryName: string;
+  displayName: string;
   onClose: () => void;
   onSave: (patch: Partial<Pick<Transaction, "amount" | "date" | "note">>) => void;
   onDelete: () => void;
@@ -173,9 +174,8 @@ function EditSheet({
         </div>
 
         <div className="mb-4">
-          <div className="text-neutral-400 tracking-[0.2em] uppercase mb-1" style={{ fontSize: 10 }}>Category</div>
-          <div className="text-neutral-900" style={{ fontSize: 14 }}>{categoryName}</div>
-          <div className="text-neutral-400 mt-1" style={{ fontSize: 11 }}>Category cannot be changed.</div>
+          <div className="text-neutral-400 tracking-[0.2em] uppercase mb-1" style={{ fontSize: 10 }}>Type</div>
+          <div className="text-neutral-900" style={{ fontSize: 14 }}>{displayName}</div>
         </div>
 
         <div className="mb-5">

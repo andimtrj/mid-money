@@ -1,80 +1,83 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, X, Trash2, Repeat, Calendar } from "lucide-react";
-import type { Category, Wallet, FixedIncome, FixedExpense } from "./types";
-import { formatIDR, ordinal } from "./types";
+import { Plus, X, Trash2, Edit2, AlertCircle } from "lucide-react";
+import type { Category, Pocket, Wallet } from "./types";
+import { formatIDR } from "./types";
 import { NumberPad } from "./NumberPad";
 
-type SheetKind = "income" | "expense" | "category-income" | "category-expense" | null;
+type SheetKind = "add-pocket" | "edit-pocket" | "category-income" | "category-expense" | "confirm-delete" | null;
+
+type ConfirmDeleteType = { type: "category" | "pocket"; id: string; name: string } | null;
 
 export function BudgetScreen({
   categories,
   wallet,
-  fixedIncomes,
-  fixedExpenses,
+  pockets,
   onAddCategory,
   onDeleteCategory,
   onUpdateWallet,
-  onAddFixedIncome,
-  onUpdateFixedIncome,
-  onDeleteFixedIncome,
-  onAddFixedExpense,
-  onUpdateFixedExpense,
-  onDeleteFixedExpense,
+  onAddPocket,
+  onUpdatePocket,
+  onDeletePocket,
 }: {
   categories: Category[];
   wallet: Wallet;
-  fixedIncomes: FixedIncome[];
-  fixedExpenses: FixedExpense[];
+  pockets: Pocket[];
   onAddCategory: (c: Omit<Category, "id">) => string;
   onDeleteCategory: (id: string) => void;
   onUpdateWallet: (w: Wallet) => void;
-  onAddFixedIncome: (fi: Omit<FixedIncome, "id">) => void;
-  onUpdateFixedIncome: (id: string, patch: Partial<Omit<FixedIncome, "id">>) => void;
-  onDeleteFixedIncome: (id: string) => void;
-  onAddFixedExpense: (fe: Omit<FixedExpense, "id">) => void;
-  onUpdateFixedExpense: (id: string, patch: Partial<Omit<FixedExpense, "id">>) => void;
-  onDeleteFixedExpense: (id: string) => void;
+  onAddPocket: (p: Omit<Pocket, "id">) => void;
+  onUpdatePocket: (id: string, patch: Partial<Omit<Pocket, "id">>) => void;
+  onDeletePocket: (id: string) => void;
 }) {
   const [sheet, setSheet] = useState<SheetKind>(null);
-  const [editIncome, setEditIncome] = useState<FixedIncome | null>(null);
-  const [editExpense, setEditExpense] = useState<FixedExpense | null>(null);
+  const [editPocket, setEditPocket] = useState<Pocket | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteType>(null);
+  const [confirmPocket, setConfirmPocket] = useState<{name: string; amount: number} | null>(null);
 
-  const catName = (id: string) => categories.find((c) => c.id === id)?.name ?? "—";
   const incomeCats = categories.filter((c) => c.type === "income");
-  const expenseCats = categories.filter((c) => c.type === "expense");
+  const nonInvestmentPockets = pockets.filter((p) => !p.isInvestment);
+  const investmentPocket = pockets.find((p) => p.isInvestment);
 
   return (
     <div className="h-full w-full bg-[#fafaf7] overflow-y-auto pb-32">
       <div className="px-8 pt-16">
         <div className="w-8 h-[2px] bg-neutral-900 mb-6" />
         <h1 className="tracking-[-0.02em] text-neutral-900 mb-12" style={{ fontSize: 34, lineHeight: 1.1, fontWeight: 300 }}>
-          Fixed
+          Budget
         </h1>
 
         <WalletCard wallet={wallet} onUpdate={onUpdateWallet} />
 
-        <SectionHeader title="Fixed Income" onAdd={() => setSheet("income")} disabled={incomeCats.length === 0} />
-        {fixedIncomes.length === 0 ? (
-          <Empty msg={incomeCats.length === 0 ? "Add an income category first." : "No fixed income."} />
+        <SectionHeader title="Pockets" onAdd={() => setSheet("add-pocket")} />
+        {nonInvestmentPockets.length === 0 ? (
+          <Empty msg="No pockets yet. Create one to organize your spending." />
         ) : (
           <ul className="divide-y divide-black/[0.05] mb-10">
-            {fixedIncomes.map((fi) => (
-              <li key={fi.id} className="py-4 flex items-center gap-3">
-                <button onClick={() => setEditIncome(fi)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <div className="w-9 h-9 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
-                    <Repeat size={14} strokeWidth={1.5} className="text-neutral-900" />
-                  </div>
+            {nonInvestmentPockets.map((p) => (
+              <li key={p.id} className="py-4 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setEditPocket(p);
+                    setSheet("edit-pocket");
+                  }}
+                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                >
                   <div className="flex-1 min-w-0">
-                    <div className="text-neutral-900 truncate" style={{ fontSize: 13 }}>{catName(fi.categoryId)}</div>
-                    <div className="text-neutral-500 truncate flex items-center gap-1" style={{ fontSize: 11 }}>
-                      <Calendar size={10} strokeWidth={1.8} />
-                      Every {ordinal(fi.dayOfMonth)}
+                    <div className="text-neutral-900 truncate" style={{ fontSize: 13 }}>
+                      {p.name}
+                    </div>
+                    <div className="text-neutral-500 truncate" style={{ fontSize: 11 }}>
+                      {formatIDR(p.balance)}
                     </div>
                   </div>
-                  <div className="text-neutral-900 tracking-tight" style={{ fontSize: 13 }}>+ {formatIDR(fi.amount)}</div>
                 </button>
-                <button onClick={() => onDeleteFixedIncome(fi.id)} className="text-neutral-300">
+                <button
+                  onClick={() =>
+                    setConfirmDelete({ type: "pocket", id: p.id, name: p.name })
+                  }
+                  className="text-neutral-300"
+                >
                   <Trash2 size={14} strokeWidth={1.5} />
                 </button>
               </li>
@@ -82,119 +85,128 @@ export function BudgetScreen({
           </ul>
         )}
 
-        <SectionHeader
-          title="Fixed Expense"
-          onAdd={() => setSheet("expense")}
-          disabled={expenseCats.length === 0 || fixedIncomes.length === 0}
-        />
-        {fixedExpenses.length === 0 ? (
-          <Empty
-            msg={
-              fixedIncomes.length === 0
-                ? "Add fixed income first."
-                : expenseCats.length === 0
-                ? "Add an expense category first."
-                : "No fixed expenses."
-            }
-          />
-        ) : (
-          <ul className="divide-y divide-black/[0.05] mb-10">
-            {fixedExpenses.map((fe) => {
-              const linked = fixedIncomes.find((i) => i.id === fe.fixedIncomeId);
-              return (
-                <li key={fe.id} className="py-4 flex items-center gap-3">
-                  <button onClick={() => setEditExpense(fe)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                    <div className="w-9 h-9 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
-                      <Repeat size={14} strokeWidth={1.5} className="text-neutral-900" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-neutral-900 truncate" style={{ fontSize: 13 }}>{catName(fe.categoryId)}</div>
-                      <div className="text-neutral-500 truncate flex items-center gap-1" style={{ fontSize: 11 }}>
-                        <Calendar size={10} strokeWidth={1.8} />
-                        {linked ? `On ${ordinal(linked.dayOfMonth)} · with ${catName(linked.categoryId)}` : "—"}
-                      </div>
-                    </div>
-                    <div className="text-neutral-500 tracking-tight" style={{ fontSize: 13 }}>− {formatIDR(fe.amount)}</div>
-                  </button>
-                  <button onClick={() => onDeleteFixedExpense(fe.id)} className="text-neutral-300">
-                    <Trash2 size={14} strokeWidth={1.5} />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+        {investmentPocket && (
+          <>
+            <SectionHeader title="Investment" onAdd={() => {}} />
+            <button
+              onClick={() => {
+                setEditPocket(investmentPocket);
+                setSheet("edit-pocket");
+              }}
+              className="w-full text-left p-4 rounded-2xl bg-white border border-black/[0.04] mb-10"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-neutral-900" style={{ fontSize: 13 }}>
+                    {investmentPocket.name}
+                  </div>
+                  <div className="text-neutral-500" style={{ fontSize: 11 }}>
+                    Cannot be used for direct expenses
+                  </div>
+                </div>
+                <div className="text-neutral-900 tracking-tight" style={{ fontSize: 14, fontWeight: 400 }}>
+                  {formatIDR(investmentPocket.balance)}
+                </div>
+              </div>
+            </button>
+          </>
         )}
 
         <SectionHeader title="Income categories" onAdd={() => setSheet("category-income")} />
-        <CategoryList items={incomeCats} onDelete={onDeleteCategory} />
-
-        <SectionHeader title="Expense categories" onAdd={() => setSheet("category-expense")} />
-        <CategoryList items={expenseCats} onDelete={onDeleteCategory} />
+        <CategoryList
+          items={incomeCats}
+          onDelete={(id, name) =>
+            setConfirmDelete({ type: "category", id, name })
+          }
+        />
       </div>
 
-      <FixedIncomeSheet
-        open={sheet === "income"}
-        categories={incomeCats}
+      <PocketSheet
+        open={sheet === "add-pocket"}
+        initial={undefined}
+        mainWalletBalance={wallet.active}
         onClose={() => setSheet(null)}
-        onSave={(fi) => {
-          onAddFixedIncome(fi);
+        onSave={(p) => {
+          setConfirmPocket({ name: p.name, amount: p.balance });
           setSheet(null);
         }}
       />
 
-      <FixedIncomeSheet
-        open={!!editIncome}
-        initial={editIncome ?? undefined}
-        categories={incomeCats}
-        onClose={() => setEditIncome(null)}
-        onSave={(fi) => {
-          if (editIncome) onUpdateFixedIncome(editIncome.id, fi);
-          setEditIncome(null);
-        }}
-      />
-
-      <FixedExpenseSheet
-        open={sheet === "expense"}
-        categories={expenseCats}
-        fixedIncomes={fixedIncomes}
-        incomeCategoryName={(id) => catName(id)}
-        onClose={() => setSheet(null)}
-        onSave={(fe) => {
-          onAddFixedExpense(fe);
+      <PocketSheet
+        open={sheet === "edit-pocket" && !!editPocket}
+        initial={editPocket ?? undefined}
+        mainWalletBalance={wallet.active}
+        isInvestment={editPocket?.isInvestment}
+        onClose={() => {
+          setEditPocket(null);
           setSheet(null);
         }}
-      />
-
-      <FixedExpenseSheet
-        open={!!editExpense}
-        initial={editExpense ?? undefined}
-        categories={expenseCats}
-        fixedIncomes={fixedIncomes}
-        incomeCategoryName={(id) => catName(id)}
-        onClose={() => setEditExpense(null)}
-        onSave={(fe) => {
-          if (editExpense) onUpdateFixedExpense(editExpense.id, fe);
-          setEditExpense(null);
+        onSave={(p) => {
+          if (editPocket) {
+            if (editPocket.isInvestment) {
+              // For investment pocket, update the balance
+              onUpdatePocket(editPocket.id, { balance: p.balance });
+            } else {
+              // For normal pockets, update name and balance
+              onUpdatePocket(editPocket.id, p);
+            }
+          }
+          setEditPocket(null);
+          setSheet(null);
         }}
       />
 
       <CategorySheet
-        open={sheet === "category-income" || sheet === "category-expense"}
-        type={sheet === "category-income" ? "income" : "expense"}
+        open={sheet === "category-income"}
+        type="income"
         onClose={() => setSheet(null)}
         onSave={(c) => {
           onAddCategory(c);
           setSheet(null);
         }}
       />
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={`Delete ${confirmDelete?.type === "category" ? "category" : "pocket"}`}
+        message={`Are you sure want to delete this ${confirmDelete?.type}?`}
+        itemName={confirmDelete?.name}
+        onConfirm={() => {
+          if (confirmDelete) {
+            if (confirmDelete.type === "category") {
+              onDeleteCategory(confirmDelete.id);
+            } else {
+              onDeletePocket(confirmDelete.id);
+            }
+          }
+          setConfirmDelete(null);
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
+      <ConfirmPocketDialog
+        open={!!confirmPocket}
+        name={confirmPocket?.name ?? ""}
+        amount={confirmPocket?.amount ?? 0}
+        onConfirm={() => {
+          if (confirmPocket) {
+            onAddPocket({ name: confirmPocket.name, balance: confirmPocket.amount, isInvestment: false });
+          }
+          setConfirmPocket(null);
+        }}
+        onCancel={() => setConfirmPocket(null)}
+      />
     </div>
   );
 }
 
+
 function SectionHeader({ title, onAdd, disabled }: { title: string; onAdd: () => void; disabled?: boolean }) {
   return (
     <div className="flex items-center justify-between mb-4 mt-2">
-      <span className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>{title}</span>
+      <span className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>
+        {title}
+      </span>
       <button
         onClick={onAdd}
         disabled={disabled}
@@ -208,17 +220,26 @@ function SectionHeader({ title, onAdd, disabled }: { title: string; onAdd: () =>
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <div className="py-6 text-center text-neutral-400 mb-6" style={{ fontSize: 12 }}>{msg}</div>;
+  return (
+    <div className="py-6 text-center text-neutral-400 mb-6" style={{ fontSize: 12 }}>
+      {msg}
+    </div>
+  );
 }
 
-function CategoryList({ items, onDelete }: { items: Category[]; onDelete: (id: string) => void }) {
+function CategoryList({ items, onDelete }: { items: Category[]; onDelete: (id: string, name: string) => void }) {
   if (items.length === 0) return <Empty msg="No categories." />;
   return (
     <ul className="divide-y divide-black/[0.05] mb-10">
       {items.map((c) => (
         <li key={c.id} className="py-3 flex items-center justify-between">
-          <span className="text-neutral-900" style={{ fontSize: 13 }}>{c.name}</span>
-          <button onClick={() => onDelete(c.id)} className="text-neutral-300">
+          <span className="text-neutral-900" style={{ fontSize: 13 }}>
+            {c.name}
+          </span>
+          <button
+            onClick={() => onDelete(c.id, c.name)}
+            className="text-neutral-300"
+          >
             <Trash2 size={14} strokeWidth={1.5} />
           </button>
         </li>
@@ -228,13 +249,8 @@ function CategoryList({ items, onDelete }: { items: Category[]; onDelete: (id: s
 }
 
 function WalletCard({ wallet, onUpdate }: { wallet: Wallet; onUpdate: (w: Wallet) => void }) {
-  const [editing, setEditing] = useState<null | "active" | "investment">(null);
-  const [amount, setAmount] = useState("0");
-
-  const open = (field: "active" | "investment") => {
-    setAmount(String(wallet[field] || 0));
-    setEditing(field);
-  };
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState(String(wallet.active || 0));
 
   const handleKey = (k: string) => {
     if (k === "back") setAmount((a) => (a.length <= 1 ? "0" : a.slice(0, -1)));
@@ -242,32 +258,37 @@ function WalletCard({ wallet, onUpdate }: { wallet: Wallet; onUpdate: (w: Wallet
   };
 
   const save = () => {
-    if (!editing) return;
-    onUpdate({ ...wallet, [editing]: parseInt(amount, 10) || 0 });
-    setEditing(null);
+    onUpdate({ ...wallet, active: parseInt(amount, 10) || 0 });
+    setEditing(false);
   };
 
   return (
     <div className="mb-12">
-      <div className="text-neutral-400 tracking-[0.2em] uppercase mb-4" style={{ fontSize: 10 }}>Wallet</div>
-      <div className="grid grid-cols-2 gap-3">
-        {(["active", "investment"] as const).map((k) => (
-          <button key={k} onClick={() => open(k)} className="text-left p-5 rounded-2xl bg-white border border-black/[0.04]">
-            <div className="text-neutral-400 tracking-[0.15em] uppercase mb-2" style={{ fontSize: 9 }}>
-              {k === "active" ? "Active balance" : "Investment"}
-            </div>
-            <div className="text-neutral-900 tracking-tight" style={{ fontSize: 18, fontWeight: 300 }}>
-              {formatIDR(wallet[k])}
-            </div>
-          </button>
-        ))}
+      <div className="text-neutral-400 tracking-[0.2em] uppercase mb-4" style={{ fontSize: 10 }}>
+        Main Balance
       </div>
+      <button
+        onClick={() => {
+          setAmount(String(wallet.active || 0));
+          setEditing(true);
+        }}
+        className="w-full text-left p-5 rounded-2xl bg-white border border-black/[0.04]"
+      >
+        <div className="text-neutral-400 tracking-[0.15em] uppercase mb-2" style={{ fontSize: 9 }}>
+          Available
+        </div>
+        <div className="text-neutral-900 tracking-tight" style={{ fontSize: 18, fontWeight: 300 }}>
+          {formatIDR(wallet.active)}
+        </div>
+      </button>
 
       <AnimatePresence>
         {editing && (
-          <Sheet onClose={() => setEditing(null)} title={`Set ${editing === "active" ? "active balance" : "investment"}`}>
+          <Sheet onClose={() => setEditing(false)} title="Set main balance">
             <div className="text-center mb-6">
-              <div className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>IDR</div>
+              <div className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>
+                IDR
+              </div>
               <div className="text-neutral-900 tracking-tight mt-1" style={{ fontSize: 40, fontWeight: 300 }}>
                 {formatIDR(parseInt(amount, 10) || 0)}
               </div>
@@ -281,131 +302,261 @@ function WalletCard({ wallet, onUpdate }: { wallet: Wallet; onUpdate: (w: Wallet
   );
 }
 
-function FixedIncomeSheet({
+function PocketSheet({
   open,
   initial,
-  categories,
+  mainWalletBalance,
+  isInvestment,
   onClose,
   onSave,
 }: {
   open: boolean;
-  initial?: FixedIncome;
-  categories: Category[];
+  initial?: Pocket;
+  mainWalletBalance: number;
+  isInvestment?: boolean;
   onClose: () => void;
-  onSave: (fi: Omit<FixedIncome, "id">) => void;
+  onSave: (p: Omit<Pocket, "id">) => void;
 }) {
-  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : "0");
-  const [day, setDay] = useState(initial?.dayOfMonth ?? 25);
+  const [name, setName] = useState(initial?.name ?? "");
+  const [amount, setAmount] = useState(initial ? String(initial.balance) : "0");
+  const canAddAmount = mainWalletBalance > 0 || !!initial;
+  const isEdit = !!initial;
 
   const handleKey = (k: string) => {
+    if (!canAddAmount) return;
     if (k === "back") setAmount((a) => (a.length <= 1 ? "0" : a.slice(0, -1)));
     else setAmount((a) => (a === "0" ? k.replace(/^0+/, "") || "0" : (a + k).slice(0, 14)));
   };
 
   const save = () => {
-    if (!categoryId || !parseInt(amount, 10)) return;
-    onSave({ categoryId, amount: parseInt(amount, 10), dayOfMonth: day });
-    if (!initial) {
-      setCategoryId("");
+    if (isInvestment) {
+      // For investment pocket, only require amount (name is fixed)
+      if (!parseInt(amount, 10)) return;
+      onSave({ name: "Investment", balance: parseInt(amount, 10), isInvestment: true });
+    } else {
+      // For normal pocket, require both name and amount
+      if (!name || !parseInt(amount, 10)) return;
+      onSave({ name, balance: parseInt(amount, 10), isInvestment: false });
+    }
+    if (!isEdit) {
+      setName("");
       setAmount("0");
-      setDay(25);
     }
   };
 
   return (
     <AnimatePresence>
       {open && (
-        <Sheet onClose={onClose} title={initial ? "Edit fixed income" : "New fixed income"}>
-          <CategoryPicker categories={categories} value={categoryId} onChange={setCategoryId} />
-          <DayPicker value={day} onChange={setDay} />
+        <Sheet onClose={onClose} title={initial ? (isInvestment ? "Transfer to Investment" : "Edit pocket") : "New pocket"}>
+          {!isInvestment && (
+            <div className="mb-6">
+              <label className="block">
+                <span className="block text-neutral-400 tracking-[0.2em] uppercase mb-2" style={{ fontSize: 10 }}>
+                  Pocket name
+                </span>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Grocery, Gas"
+                  className="w-full bg-transparent border-b border-neutral-200 focus:border-neutral-900 outline-none pb-2 text-neutral-900 placeholder:text-neutral-400"
+                  style={{ fontSize: 14 }}
+                />
+              </label>
+            </div>
+          )}
+
+          {!canAddAmount && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 mb-6 flex items-start gap-2">
+              <AlertCircle size={16} className="text-red-600 mt-0.5 shrink-0" />
+              <div>
+                <div className="text-red-700 font-medium" style={{ fontSize: 12 }}>
+                  Cannot add amount
+                </div>
+                <div className="text-red-600" style={{ fontSize: 11 }}>
+                  Main Wallet balance must be greater than 0
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="text-center mb-6">
-            <div className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>Amount · IDR</div>
+            <div className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>
+              Initial amount · IDR
+            </div>
             <div className="text-neutral-900 tracking-tight mt-1" style={{ fontSize: 36, fontWeight: 300 }}>
               {formatIDR(parseInt(amount, 10) || 0)}
             </div>
+            <div className="text-neutral-400 mt-2" style={{ fontSize: 11 }}>
+              Main Wallet: {formatIDR(mainWalletBalance)}
+            </div>
           </div>
           <NumberPad onInput={handleKey} />
-          <PrimaryButton onClick={save} disabled={!categoryId || !parseInt(amount, 10)}>Save</PrimaryButton>
+          <PrimaryButton
+            onClick={save}
+            disabled={isInvestment ? !parseInt(amount, 10) || !canAddAmount : (!name || !parseInt(amount, 10) || !canAddAmount)}
+          >
+            {isInvestment ? "Transfer" : "Continue"}
+          </PrimaryButton>
         </Sheet>
       )}
     </AnimatePresence>
   );
 }
 
-function FixedExpenseSheet({
+function ConfirmDialog({
   open,
-  initial,
-  categories,
-  fixedIncomes,
-  incomeCategoryName,
-  onClose,
-  onSave,
+  title,
+  message,
+  itemName,
+  onConfirm,
+  onCancel,
 }: {
   open: boolean;
-  initial?: FixedExpense;
-  categories: Category[];
-  fixedIncomes: FixedIncome[];
-  incomeCategoryName: (id: string) => string;
-  onClose: () => void;
-  onSave: (fe: Omit<FixedExpense, "id">) => void;
+  title: string;
+  message: string;
+  itemName?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
 }) {
-  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : "0");
-  const [fixedIncomeId, setFixedIncomeId] = useState(initial?.fixedIncomeId ?? fixedIncomes[0]?.id ?? "");
-
-  const handleKey = (k: string) => {
-    if (k === "back") setAmount((a) => (a.length <= 1 ? "0" : a.slice(0, -1)));
-    else setAmount((a) => (a === "0" ? k.replace(/^0+/, "") || "0" : (a + k).slice(0, 14)));
-  };
-
-  const save = () => {
-    if (!categoryId || !fixedIncomeId || !parseInt(amount, 10)) return;
-    onSave({ categoryId, amount: parseInt(amount, 10), fixedIncomeId });
-    if (!initial) {
-      setCategoryId("");
-      setAmount("0");
-    }
-  };
-
   return (
     <AnimatePresence>
       {open && (
-        <Sheet onClose={onClose} title={initial ? "Edit fixed expense" : "New fixed expense"}>
-          <CategoryPicker categories={categories} value={categoryId} onChange={setCategoryId} />
-          <div className="mb-6">
-            <div className="text-neutral-400 tracking-[0.2em] uppercase mb-2" style={{ fontSize: 10 }}>
-              Sync with fixed income
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-6 px-6 scrollbar-none">
-              {fixedIncomes.map((fi) => (
-                <button
-                  key={fi.id}
-                  onClick={() => setFixedIncomeId(fi.id)}
-                  className="shrink-0 px-4 py-2 rounded-full border transition-all"
-                  style={{
-                    fontSize: 12,
-                    borderColor: fixedIncomeId === fi.id ? "#171717" : "rgba(0,0,0,0.08)",
-                    background: fixedIncomeId === fi.id ? "#171717" : "transparent",
-                    color: fixedIncomeId === fi.id ? "#fff" : "#525252",
-                  }}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onCancel}
+          className="absolute inset-0 bg-black/30 z-50 flex items-end"
+        >
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-[#fafaf7] rounded-t-[28px] pt-3 pb-8 px-6"
+          >
+            <div className="mx-auto w-10 h-1 rounded-full bg-neutral-300 mb-4" />
+            <div className="mb-6">
+              <div className="text-neutral-900 mb-2" style={{ fontSize: 16, fontWeight: 500 }}>
+                {title}
+              </div>
+              <div className="text-neutral-600" style={{ fontSize: 14 }}>
+                {message}
+              </div>
+              {itemName && (
+                <div
+                  className="mt-3 p-3 rounded-lg bg-neutral-100 text-neutral-900 truncate"
+                  style={{ fontSize: 13 }}
                 >
-                  {incomeCategoryName(fi.categoryId)} · {ordinal(fi.dayOfMonth)}
-                </button>
-              ))}
+                  {itemName}
+                </div>
+              )}
             </div>
-          </div>
-          <div className="text-center mb-6">
-            <div className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>Amount · IDR</div>
-            <div className="text-neutral-900 tracking-tight mt-1" style={{ fontSize: 36, fontWeight: 300 }}>
-              {formatIDR(parseInt(amount, 10) || 0)}
+            <div className="flex gap-2">
+              <button
+                onClick={onCancel}
+                className="flex-1 h-12 rounded-full border border-neutral-300 text-neutral-900 tracking-[0.2em] uppercase"
+                style={{ fontSize: 11 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirm}
+                className="flex-1 h-12 rounded-full bg-red-600 text-white tracking-[0.2em] uppercase"
+                style={{ fontSize: 11 }}
+              >
+                Delete
+              </button>
             </div>
-          </div>
-          <NumberPad onInput={handleKey} />
-          <PrimaryButton onClick={save} disabled={!categoryId || !fixedIncomeId || !parseInt(amount, 10)}>
-            Save
-          </PrimaryButton>
-        </Sheet>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function ConfirmPocketDialog({
+  open,
+  name,
+  amount,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  name: string;
+  amount: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onCancel}
+          className="absolute inset-0 bg-black/30 z-50 flex items-end"
+        >
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-[#fafaf7] rounded-t-[28px] pt-3 pb-8 px-6"
+          >
+            <div className="mx-auto w-10 h-1 rounded-full bg-neutral-300 mb-4" />
+            <div className="mb-6">
+              <div className="text-neutral-900 mb-4" style={{ fontSize: 16, fontWeight: 500 }}>
+                Create new Pocket?
+              </div>
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 mb-4">
+                <div className="text-blue-700 font-medium" style={{ fontSize: 12 }}>
+                  ⓘ Note
+                </div>
+                <div className="text-blue-600 mt-1" style={{ fontSize: 11 }}>
+                  The initial amount for Pockets will be taken from the Main Wallet
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-neutral-100">
+                  <span className="text-neutral-600" style={{ fontSize: 13 }}>
+                    Pocket name:
+                  </span>
+                  <span className="text-neutral-900 font-medium" style={{ fontSize: 13 }}>
+                    {name}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-neutral-100">
+                  <span className="text-neutral-600" style={{ fontSize: 13 }}>
+                    Amount:
+                  </span>
+                  <span className="text-neutral-900 font-medium" style={{ fontSize: 13 }}>
+                    {formatIDR(amount)}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={onCancel}
+                className="flex-1 h-12 rounded-full border border-neutral-300 text-neutral-900 tracking-[0.2em] uppercase"
+                style={{ fontSize: 11 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirm}
+                className="flex-1 h-12 rounded-full bg-neutral-900 text-white tracking-[0.2em] uppercase"
+                style={{ fontSize: 11 }}
+              >
+                Create
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
@@ -418,148 +569,104 @@ function CategorySheet({
   onSave,
 }: {
   open: boolean;
-  type: "income" | "expense";
+  type: "income";
   onClose: () => void;
   onSave: (c: Omit<Category, "id">) => void;
 }) {
   const [name, setName] = useState("");
+
   const save = () => {
-    if (!name.trim()) return;
-    onSave({ name: name.trim(), type });
+    if (!name) return;
+    onSave({ name, type });
     setName("");
   };
+
   return (
     <AnimatePresence>
       {open && (
-        <Sheet onClose={onClose} title={`New ${type} category`}>
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
-            className="w-full bg-transparent border-b border-neutral-200 focus:border-neutral-900 outline-none pb-2 mb-6 text-neutral-900 placeholder:text-neutral-400"
-            style={{ fontSize: 16 }}
-          />
-          <PrimaryButton onClick={save} disabled={!name.trim()}>Save</PrimaryButton>
+        <Sheet
+          onClose={onClose}
+          title="New income category"
+        >
+          <label className="block mb-6">
+            <span className="block text-neutral-400 tracking-[0.2em] uppercase mb-2" style={{ fontSize: 10 }}>
+              Name
+            </span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={`e.g., ${type === "income" ? "Salary" : "Food"}`}
+              className="w-full bg-transparent border-b border-neutral-200 focus:border-neutral-900 outline-none pb-2 text-neutral-900 placeholder:text-neutral-400"
+              style={{ fontSize: 14 }}
+              autoFocus
+            />
+          </label>
+          <PrimaryButton onClick={save} disabled={!name}>
+            Create category
+          </PrimaryButton>
         </Sheet>
       )}
     </AnimatePresence>
   );
 }
 
-function CategoryPicker({
-  categories,
-  value,
-  onChange,
+function Sheet({
+  onClose,
+  title,
+  children,
 }: {
-  categories: Category[];
-  value: string;
-  onChange: (id: string) => void;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="mb-6">
-      <div className="text-neutral-400 tracking-[0.2em] uppercase mb-2" style={{ fontSize: 10 }}>Category</div>
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-6 px-6 scrollbar-none">
-        {categories.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => onChange(c.id)}
-            className="shrink-0 px-4 py-2 rounded-full border transition-all"
-            style={{
-              fontSize: 12,
-              borderColor: value === c.id ? "#171717" : "rgba(0,0,0,0.08)",
-              background: value === c.id ? "#171717" : "transparent",
-              color: value === c.id ? "#fff" : "#525252",
-            }}
-          >
-            {c.name}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DayPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  const days = Array.from({ length: 31 }, (_, i) => i + 1);
-  return (
-    <div className="mb-6">
-      <div className="flex items-baseline justify-between mb-3">
-        <span className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>
-          Repeat date
-        </span>
-        <span className="text-neutral-900" style={{ fontSize: 12 }}>
-          Every {ordinal(value)}
-        </span>
-      </div>
-      <div className="grid grid-cols-7 gap-1.5 p-3 rounded-2xl bg-white border border-black/[0.04]">
-        {days.map((d) => {
-          const selected = value === d;
-          return (
-            <button
-              key={d}
-              onClick={() => onChange(d)}
-              className="aspect-square rounded-full transition-all flex items-center justify-center"
-              style={{
-                fontSize: 12,
-                background: selected ? "#171717" : "transparent",
-                color: selected ? "#fff" : "#525252",
-              }}
-            >
-              {d}
-            </button>
-          );
-        })}
-      </div>
-      {value > 28 && (
-        <div className="text-neutral-400 mt-2" style={{ fontSize: 11 }}>
-          On months without the {ordinal(value)}, the cycle runs on the last day.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Sheet({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm z-40"
-      />
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="absolute inset-0 bg-black/20 z-40"
+    >
       <motion.div
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 32, stiffness: 320 }}
-        className="absolute bottom-0 left-0 right-0 z-50 bg-[#fafaf7] rounded-t-[28px] pt-3 pb-8 px-6 max-h-[92%] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-0 left-0 right-0 z-50 bg-[#fafaf7] rounded-t-[28px] pt-3 pb-8 px-6"
       >
         <div className="mx-auto w-10 h-1 rounded-full bg-neutral-300 mb-4" />
         <div className="flex items-center justify-between mb-6">
-          <span className="tracking-[0.2em] uppercase text-neutral-500" style={{ fontSize: 10 }}>{title}</span>
+          <span className="tracking-[0.2em] uppercase text-neutral-500" style={{ fontSize: 10 }}>
+            {title}
+          </span>
           <button onClick={onClose} className="text-neutral-400">
             <X size={18} strokeWidth={1.5} />
           </button>
         </div>
         {children}
       </motion.div>
-    </>
+    </motion.div>
   );
 }
 
-function PrimaryButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
+function PrimaryButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <motion.button
-      whileTap={{ scale: 0.98 }}
+    <button
       onClick={onClick}
       disabled={disabled}
-      className="mt-5 w-full h-14 rounded-full bg-neutral-900 text-white tracking-[0.2em] uppercase disabled:opacity-30"
+      className="w-full h-12 rounded-full bg-neutral-900 text-white tracking-[0.2em] uppercase flex items-center justify-center disabled:opacity-50"
       style={{ fontSize: 11 }}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }

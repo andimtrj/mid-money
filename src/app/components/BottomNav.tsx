@@ -5,8 +5,8 @@ type Tab = "home" | "budget" | "analytics" | "profile";
 export function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   const items: { key: Tab; label: string; Icon: typeof Home }[] = [
     { key: "home", label: "Home", Icon: Home },
-    { key: "budget", label: "Fixed", Icon: Wallet },
-    { key: "analytics", label: "Stats", Icon: BarChart3 },
+    { key: "budget", label: "Budget", Icon: Wallet },
+    { key: "analytics", label: "Analytics", Icon: BarChart3 },
     { key: "profile", label: "Profile", Icon: User },
   ];
   return (

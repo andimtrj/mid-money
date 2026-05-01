@@ -1,47 +1,25 @@
 import { motion } from "motion/react";
-import { Plus, ArrowUpRight, ArrowDownRight, AlertTriangle, Sparkles, ChevronRight, Repeat } from "lucide-react";
-import type { Category, Transaction, Wallet, FixedIncome, FixedExpense, AlertKind } from "./types";
-import {
-  formatIDR,
-  currentCycleStart,
-  spentInCycle,
-  fixedExpenseTotalFor,
-  expenseStatus,
-} from "./types";
+import { Plus, ArrowUpRight, ArrowDownRight, ChevronRight } from "lucide-react";
+import type { Pocket, Transaction, Wallet } from "./types";
+import { formatIDR } from "./types";
 
 export function HomeScreen({
   name,
   wallet,
   transactions,
-  categories,
-  fixedIncomes,
-  fixedExpenses,
+  pockets,
   onAdd,
   onSeeAll,
 }: {
   name: string;
   wallet: Wallet;
   transactions: Transaction[];
-  categories: Category[];
-  fixedIncomes: FixedIncome[];
-  fixedExpenses: FixedExpense[];
+  pockets: Pocket[];
   onAdd: () => void;
   onSeeAll: () => void;
 }) {
   const recent = [...transactions].sort((a, b) => b.date - a.date).slice(0, 5);
-  const cycleStart = currentCycleStart(fixedIncomes);
-
-  const alerts = categories
-    .filter((c) => c.type === "expense")
-    .map((c) => {
-      const fixed = fixedExpenseTotalFor(c.id, fixedExpenses);
-      const spent = spentInCycle(c.id, transactions, cycleStart);
-      return { category: c, spent, fixed, kind: expenseStatus(spent, fixed) };
-    })
-    .filter((a) => a.fixed > 0 && a.kind !== "on-track")
-    .sort((a, b) => rank(a.kind) - rank(b.kind));
-
-  const catById = (id: string) => categories.find((c) => c.id === id);
+  const getPocketName = (id: string | undefined) => pockets.find((p) => p.id === id)?.name ?? "—";
 
   return (
     <div className="h-full w-full bg-[#fafaf7] overflow-y-auto pb-32">
@@ -62,15 +40,33 @@ export function HomeScreen({
 
         <div className="mb-10">
           <div className="text-neutral-400 tracking-[0.2em] uppercase mb-3" style={{ fontSize: 10 }}>
-            Current balance
+            Main Balance
           </div>
           <div className="text-neutral-900 tracking-tight" style={{ fontSize: 44, fontWeight: 300, lineHeight: 1 }}>
             {formatIDR(wallet.active)}
           </div>
-          <div className="flex gap-6 mt-4 text-neutral-500" style={{ fontSize: 12 }}>
-            <span>Invest · {formatIDR(wallet.investment)}</span>
-          </div>
         </div>
+
+        {pockets.length > 0 && (
+          <div className="mb-10">
+            <div className="text-neutral-400 tracking-[0.2em] uppercase mb-3" style={{ fontSize: 10 }}>
+              Pockets
+            </div>
+            <div className="space-y-2">
+              {pockets.map((pocket) => (
+                <div key={pocket.id} className="flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-black/[0.04]">
+                  <span className="text-neutral-900" style={{ fontSize: 13 }}>
+                    {pocket.name}
+                    {pocket.isInvestment && <span className="text-neutral-400 ml-2">(Investment)</span>}
+                  </span>
+                  <span className="text-neutral-900 tracking-tight" style={{ fontSize: 13, fontWeight: 400 }}>
+                    {formatIDR(pocket.balance)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <motion.button
           whileTap={{ scale: 0.98 }}
@@ -81,56 +77,6 @@ export function HomeScreen({
           <Plus size={16} strokeWidth={1.5} />
           Add transaction
         </motion.button>
-
-        {alerts.length > 0 && (
-          <div className="mb-10">
-            <div className="flex items-baseline justify-between mb-4">
-              <span className="text-neutral-400 tracking-[0.2em] uppercase" style={{ fontSize: 10 }}>
-                Budget alerts
-              </span>
-              <span className="text-neutral-400" style={{ fontSize: 11 }}>{alerts.length}</span>
-            </div>
-            <div className="space-y-2">
-              {alerts.map((a, i) => {
-                const meta = kindMeta(a.kind);
-                const ratio = a.spent / a.fixed;
-                return (
-                  <motion.div
-                    key={a.category.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-neutral-900/[0.03]"
-                  >
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-                      style={{ background: meta.iconBg }}
-                    >
-                      <meta.Icon size={14} strokeWidth={1.5} className="text-neutral-900" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-neutral-900 truncate" style={{ fontSize: 13 }}>{a.category.name}</span>
-                        <span
-                          className="px-1.5 py-0.5 rounded-full tracking-[0.15em] uppercase shrink-0 text-neutral-900"
-                          style={{ fontSize: 9, background: "rgba(0,0,0,0.06)" }}
-                        >
-                          {meta.label}
-                        </span>
-                      </div>
-                      <div className="text-neutral-500 truncate mt-0.5" style={{ fontSize: 11 }}>
-                        {formatIDR(a.spent)} of {formatIDR(a.fixed)}
-                      </div>
-                    </div>
-                    <div className="text-neutral-900 tracking-widest tabular-nums" style={{ fontSize: 11 }}>
-                      {Math.round(ratio * 100)}%
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         <div>
           <div className="flex items-baseline justify-between mb-4">
@@ -147,48 +93,32 @@ export function HomeScreen({
             </div>
           ) : (
             <ul className="divide-y divide-black/[0.05]">
-              {recent.map((t) => {
-                const cat = catById(t.categoryId);
-                return (
-                  <li key={t.id} className="py-4 flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
-                      {t.type === "income" ? (
-                        <ArrowUpRight size={14} strokeWidth={1.5} className="text-neutral-900" />
-                      ) : (
-                        <ArrowDownRight size={14} strokeWidth={1.5} className="text-neutral-900" />
-                      )}
+              {recent.map((t) => (
+                <li key={t.id} className="py-4 flex items-center gap-4">
+                  <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                    {t.type === "income" ? (
+                      <ArrowUpRight size={14} strokeWidth={1.5} className="text-neutral-900" />
+                    ) : (
+                      <ArrowDownRight size={14} strokeWidth={1.5} className="text-neutral-900" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-neutral-900 truncate" style={{ fontSize: 13 }}>
+                      {t.type === "income" ? "Income" : `Pocket: ${getPocketName(t.pocketId)}`}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-neutral-900 truncate" style={{ fontSize: 13 }}>{cat?.name ?? "—"}</span>
-                        {t.fixed && (
-                          <Repeat size={10} strokeWidth={1.8} className="text-neutral-400 shrink-0" />
-                        )}
-                      </div>
-                      {t.note && (
-                        <div className="text-neutral-500 truncate" style={{ fontSize: 11 }}>{t.note}</div>
-                      )}
-                    </div>
-                    <div className="tracking-tight" style={{ fontSize: 14, color: t.type === "income" ? "#171717" : "#525252" }}>
-                      {t.type === "income" ? "+" : "−"} {formatIDR(t.amount)}
-                    </div>
-                  </li>
-                );
-              })}
+                    {t.note && (
+                      <div className="text-neutral-500 truncate" style={{ fontSize: 11 }}>{t.note}</div>
+                    )}
+                  </div>
+                  <div className="tracking-tight" style={{ fontSize: 14, color: t.type === "income" ? "#171717" : "#525252" }}>
+                    {t.type === "income" ? "+" : "−"} {formatIDR(t.amount)}
+                  </div>
+                </li>
+              ))}
             </ul>
           )}
         </div>
       </div>
     </div>
   );
-}
-
-function rank(k: AlertKind) {
-  return { over: 0, near: 1, under: 2, "on-track": 3 }[k];
-}
-
-function kindMeta(kind: AlertKind) {
-  if (kind === "over") return { label: "Overbudget", iconBg: "#f1cfc0", Icon: AlertTriangle };
-  if (kind === "near") return { label: "Near limit", iconBg: "#f3e2c7", Icon: AlertTriangle };
-  return { label: "Underbudget", iconBg: "#dfdbf4", Icon: Sparkles };
 }

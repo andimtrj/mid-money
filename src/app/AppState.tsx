@@ -3,12 +3,10 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import type {
   Category,
-  FixedExpense,
-  FixedIncome,
+  Pocket,
   Transaction,
   Wallet,
 } from "./components/types";
-import { cycleStartFromDay } from "./components/types";
 import {
   createBudgetBackendFromEnv,
   type BudgetBackend,
@@ -22,14 +20,10 @@ type AppStateValue = {
   setWallet: (wallet: Wallet) => void;
   categories: Category[];
   setCategories: (categories: Category[]) => void;
+  pockets: Pocket[];
+  setPockets: (pockets: Pocket[]) => void;
   transactions: Transaction[];
   setTransactions: (transactions: Transaction[]) => void;
-  fixedIncomes: FixedIncome[];
-  setFixedIncomes: (items: FixedIncome[]) => void;
-  fixedExpenses: FixedExpense[];
-  setFixedExpenses: (items: FixedExpense[]) => void;
-  appliedCycles: Set<string>;
-  setAppliedCycles: (cycles: Set<string>) => void;
   addOpen: boolean;
   setAddOpen: (open: boolean) => void;
   addTransaction: (t: Omit<Transaction, "id" | "date">) => void;
@@ -40,18 +34,11 @@ type AppStateValue = {
   deleteTransaction: (id: string) => void;
   addCategory: (c: Omit<Category, "id">) => string;
   deleteCategory: (id: string) => void;
-  addFixedIncome: (fi: Omit<FixedIncome, "id">) => void;
-  updateFixedIncome: (
-    id: string,
-    patch: Partial<Omit<FixedIncome, "id">>,
-  ) => void;
-  deleteFixedIncome: (id: string) => void;
-  addFixedExpense: (fe: Omit<FixedExpense, "id">) => void;
-  updateFixedExpense: (
-    id: string,
-    patch: Partial<Omit<FixedExpense, "id">>,
-  ) => void;
-  deleteFixedExpense: (id: string) => void;
+  addPocket: (p: Omit<Pocket, "id">) => void;
+  updatePocket: (id: string, patch: Partial<Omit<Pocket, "id">>) => void;
+  deletePocket: (id: string) => void;
+  transferToPocket: (pocketId: string, amount: number) => void;
+  transferFromPocket: (pocketId: string, amount: number) => void;
   hydrated: boolean;
   authReady: boolean;
   authLoading: boolean;
@@ -70,133 +57,24 @@ type AppStateValue = {
 const initialCategories: Category[] = [
   { id: "c-salary", name: "Salary", type: "income" },
   { id: "c-freelance", name: "Freelance", type: "income" },
-  { id: "c-food", name: "Food", type: "expense" },
-  { id: "c-transport", name: "Transport", type: "expense" },
-  { id: "c-home", name: "Home", type: "expense" },
-  { id: "c-rent", name: "Rent", type: "expense" },
-  { id: "c-bills", name: "Bills", type: "expense" },
 ];
 
-const initialFixedIncomes: FixedIncome[] = [
-  { id: "fi-1", categoryId: "c-salary", amount: 15000000, dayOfMonth: 25 },
-];
-
-const initialFixedExpenses: FixedExpense[] = [
-  { id: "fe-1", categoryId: "c-rent", amount: 3500000, fixedIncomeId: "fi-1" },
-  { id: "fe-2", categoryId: "c-bills", amount: 800000, fixedIncomeId: "fi-1" },
-];
-
-const initialTransactions: Transaction[] = [
-  {
-    id: "tx-1",
-    type: "expense",
-    amount: 180000,
-    categoryId: "c-food",
-    note: "Groceries",
-    date: Date.UTC(2026, 3, 25, 12, 0, 0),
-  },
-  {
-    id: "tx-2",
-    type: "expense",
-    amount: 65000,
-    categoryId: "c-transport",
-    note: "Gojek",
-    date: Date.UTC(2026, 3, 26, 12, 0, 0),
-  },
-  {
-    id: "tx-3",
-    type: "expense",
-    amount: 2200000,
-    categoryId: "c-food",
-    note: "Dining out",
-    date: Date.UTC(2026, 3, 27, 6, 0, 0),
-  },
-];
+const initialTransactions: Transaction[] = [];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-const cycleMonthKey = (ts: number) => {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${d.getMonth() + 1}`;
-};
-
-const cycleKey = (ts: number, id: string) => {
-  return `${cycleMonthKey(ts)}-${id}`;
-};
-
-function applyFixedCycles({
-  fixedIncomes,
-  fixedExpenses,
-  appliedCycles,
-}: {
-  fixedIncomes: FixedIncome[];
-  fixedExpenses: FixedExpense[];
-  appliedCycles: Set<string>;
-}) {
-  const next = new Set(appliedCycles);
-  const newTransactions: Transaction[] = [];
-  let walletDelta = 0;
-
-  for (const fi of fixedIncomes) {
-    const cycleStart = cycleStartFromDay(fi.dayOfMonth);
-    const key = cycleKey(cycleStart, fi.id);
-    if (next.has(key)) continue;
-    next.add(key);
-    newTransactions.push({
-      id: uid(),
-      type: "income",
-      amount: fi.amount,
-      categoryId: fi.categoryId,
-      note: "Fixed income",
-      date: cycleStart,
-      fixed: true,
-      fixedSourceId: fi.id,
-      fixedCycleKey: cycleMonthKey(cycleStart),
-    });
-    walletDelta += fi.amount;
-  }
-
-  for (const fe of fixedExpenses) {
-    const linked = fixedIncomes.find((item) => item.id === fe.fixedIncomeId);
-    if (!linked) continue;
-    const cycleStart = cycleStartFromDay(linked.dayOfMonth);
-    const key = cycleKey(cycleStart, fe.id);
-    if (next.has(key)) continue;
-    next.add(key);
-    newTransactions.push({
-      id: uid(),
-      type: "expense",
-      amount: fe.amount,
-      categoryId: fe.categoryId,
-      note: "Fixed expense",
-      date: cycleStart,
-      fixed: true,
-      fixedSourceId: fe.id,
-      fixedCycleKey: cycleMonthKey(cycleStart),
-    });
-    walletDelta -= fe.amount;
-  }
-
-  return { appliedCycles: next, newTransactions, walletDelta };
-}
-
 function createInitialState() {
-  const wallet = { active: 12550000, investment: 38000000 };
-  const appliedCycles = new Set<string>();
-  const cycleResult = applyFixedCycles({
-    fixedIncomes: initialFixedIncomes,
-    fixedExpenses: initialFixedExpenses,
-    appliedCycles,
-  });
+  const wallet = { active: 0 };
+  const pockets: Pocket[] = [
+    { id: "p-investment", name: "Investment", balance: 0, isInvestment: true },
+  ];
 
   return {
     name: null as string | null,
-    wallet: { ...wallet, active: wallet.active + cycleResult.walletDelta },
+    wallet,
     categories: initialCategories,
-    transactions: [...cycleResult.newTransactions, ...initialTransactions],
-    fixedIncomes: initialFixedIncomes,
-    fixedExpenses: initialFixedExpenses,
-    appliedCycles: cycleResult.appliedCycles,
+    pockets,
+    transactions: initialTransactions,
     addOpen: false,
     hydrated: false,
     authReady: false,
@@ -206,28 +84,13 @@ function createInitialState() {
   };
 }
 
-function snapshotAppliedCycles(transactions: Transaction[]) {
-  const cycles = new Set<string>();
-  for (const tx of transactions) {
-    if (!tx.fixed) continue;
-    if (tx.fixedSourceId && tx.fixedCycleKey) {
-      cycles.add(`${tx.fixedCycleKey}-${tx.fixedSourceId}`);
-      continue;
-    }
-    cycles.add(cycleKey(tx.date, tx.fixedSourceId ?? tx.id));
-  }
-  return cycles;
-}
-
 function applySnapshot(set: (patch: Partial<AppStateValue>) => void, snapshot: BudgetSnapshot) {
   set({
     name: snapshot.name,
     wallet: snapshot.wallet,
     categories: snapshot.categories,
+    pockets: snapshot.pockets,
     transactions: snapshot.transactions,
-    fixedIncomes: snapshot.fixedIncomes,
-    fixedExpenses: snapshot.fixedExpenses,
-    appliedCycles: snapshotAppliedCycles(snapshot.transactions),
   });
 }
 
@@ -280,10 +143,8 @@ const useAppStore = create<AppStoreState>((set, get) => ({
     });
   },
   setCategories: (categories) => set({ categories }),
+  setPockets: (pockets) => set({ pockets }),
   setTransactions: (transactions) => set({ transactions }),
-  setFixedIncomes: (fixedIncomes) => set({ fixedIncomes }),
-  setFixedExpenses: (fixedExpenses) => set({ fixedExpenses }),
-  setAppliedCycles: (appliedCycles) => set({ appliedCycles: new Set(appliedCycles) }),
   setAddOpen: (addOpen) => set({ addOpen }),
   hydrateFromBackend: async () => {
     const api = backend();
@@ -383,16 +244,26 @@ const useAppStore = create<AppStoreState>((set, get) => ({
       id: uid(),
       date: Date.now(),
     };
-    set((state) => ({
-      transactions: [nextTx, ...state.transactions],
-      wallet: {
-        ...state.wallet,
-        active:
-          t.type === "income"
-            ? state.wallet.active + t.amount
-            : state.wallet.active - t.amount,
-      },
-    }));
+    set((state) => {
+      const nextState: Partial<AppStateValue> = {
+        transactions: [nextTx, ...state.transactions],
+      };
+
+      // Update wallet/pocket balances locally
+      if (t.type === "income") {
+        nextState.wallet = {
+          active: state.wallet.active + t.amount,
+        };
+      } else if (t.type === "expense" && t.pocketId) {
+        nextState.pockets = state.pockets.map((p) =>
+          p.id === t.pocketId
+            ? { ...p, balance: p.balance - t.amount }
+            : p
+        );
+      }
+
+      return nextState;
+    });
 
     queueSync(async () => {
       const api = backend();
@@ -407,23 +278,28 @@ const useAppStore = create<AppStoreState>((set, get) => ({
 
       const nextAmount = patch.amount ?? current.amount;
       const delta = nextAmount - current.amount;
-      const nextWallet =
-        delta === 0
-          ? state.wallet
-          : {
-              ...state.wallet,
-              active:
-                current.type === "income"
-                  ? state.wallet.active + delta
-                  : state.wallet.active - delta,
-            };
-
-      return {
+      const nextState: Partial<AppStateValue> = {
         transactions: state.transactions.map((item) =>
           item.id === id ? { ...item, ...patch } : item,
         ),
-        wallet: nextWallet,
       };
+
+      // Update wallet/pocket balances locally
+      if (delta !== 0) {
+        if (current.type === "income") {
+          nextState.wallet = {
+            active: state.wallet.active + delta,
+          };
+        } else if (current.type === "expense" && current.pocketId) {
+          nextState.pockets = state.pockets.map((p) =>
+            p.id === current.pocketId
+              ? { ...p, balance: p.balance + delta }
+              : p
+          );
+        }
+      }
+
+      return nextState;
     });
 
     queueSync(async () => {
@@ -437,16 +313,24 @@ const useAppStore = create<AppStoreState>((set, get) => ({
       const target = state.transactions.find((item) => item.id === id);
       if (!target) return {};
 
-      return {
+      const nextState: Partial<AppStateValue> = {
         transactions: state.transactions.filter((item) => item.id !== id),
-        wallet: {
-          ...state.wallet,
-          active:
-            target.type === "income"
-              ? state.wallet.active - target.amount
-              : state.wallet.active + target.amount,
-        },
       };
+
+      // Update wallet/pocket balances locally
+      if (target.type === "income") {
+        nextState.wallet = {
+          active: state.wallet.active - target.amount,
+        };
+      } else if (target.type === "expense" && target.pocketId) {
+        nextState.pockets = state.pockets.map((p) =>
+          p.id === target.pocketId
+            ? { ...p, balance: p.balance + target.amount }
+            : p
+        );
+      }
+
+      return nextState;
     });
 
     queueSync(async () => {
@@ -472,8 +356,6 @@ const useAppStore = create<AppStoreState>((set, get) => ({
   deleteCategory: (id) => {
     set((state) => ({
       categories: state.categories.filter((item) => item.id !== id),
-      fixedIncomes: state.fixedIncomes.filter((item) => item.categoryId !== id),
-      fixedExpenses: state.fixedExpenses.filter((item) => item.categoryId !== id),
     }));
 
     queueSync(async () => {
@@ -482,56 +364,23 @@ const useAppStore = create<AppStoreState>((set, get) => ({
       await api.deleteCategory(id);
     });
   },
-  addFixedIncome: (fi) => {
+  addPocket: (p) => {
     const id = uid();
-    const cycleStart = cycleStartFromDay(fi.dayOfMonth);
-    const key = cycleKey(cycleStart, id);
-
-    set((state) => {
-      if (state.appliedCycles.has(key)) {
-        return {
-          fixedIncomes: [...state.fixedIncomes, { ...fi, id }],
-        };
-      }
-
-      const nextCycles = new Set(state.appliedCycles);
-      nextCycles.add(key);
-      return {
-        fixedIncomes: [...state.fixedIncomes, { ...fi, id }],
-        appliedCycles: nextCycles,
-        transactions: [
-          {
-            id: uid(),
-            type: "income",
-            amount: fi.amount,
-            categoryId: fi.categoryId,
-            note: "Fixed income",
-            date: cycleStart,
-            fixed: true,
-            fixedSourceId: id,
-            fixedCycleKey: cycleMonthKey(cycleStart),
-          },
-          ...state.transactions,
-        ],
-        wallet: {
-          ...state.wallet,
-          active: state.wallet.active + fi.amount,
-        },
-      };
-    });
+    set((state) => ({
+      pockets: [...state.pockets, { ...p, id }],
+    }));
 
     queueSync(async () => {
       const api = backend();
       if (!api.isConfigured) return;
-      await api.addFixedIncome(fi);
-      await api.applyCycles();
+      await api.addPocket(p);
       const snapshot = await api.loadSnapshot();
       if (snapshot) applySnapshot(set, snapshot);
     });
   },
-  updateFixedIncome: (id, patch) => {
+  updatePocket: (id, patch) => {
     set((state) => ({
-      fixedIncomes: state.fixedIncomes.map((item) =>
+      pockets: state.pockets.map((item) =>
         item.id === id ? { ...item, ...patch } : item,
       ),
     }));
@@ -539,94 +388,50 @@ const useAppStore = create<AppStoreState>((set, get) => ({
     queueSync(async () => {
       const api = backend();
       if (!api.isConfigured) return;
-      await api.updateFixedIncome(id, patch);
+      await api.updatePocket(id, patch);
     });
   },
-  deleteFixedIncome: (id) => {
+  deletePocket: (id) => {
     set((state) => ({
-      fixedIncomes: state.fixedIncomes.filter((item) => item.id !== id),
-      fixedExpenses: state.fixedExpenses.filter((item) => item.fixedIncomeId !== id),
+      pockets: state.pockets.filter((item) => item.id !== id),
     }));
 
     queueSync(async () => {
       const api = backend();
       if (!api.isConfigured) return;
-      await api.deleteFixedIncome(id);
+      await api.deletePocket(id);
     });
   },
-  addFixedExpense: (fe) => {
-    const id = uid();
-
-    set((state) => {
-      const linked = state.fixedIncomes.find((item) => item.id === fe.fixedIncomeId);
-      if (!linked) {
-        return { fixedExpenses: [...state.fixedExpenses, { ...fe, id }] };
-      }
-
-      const cycleStart = cycleStartFromDay(linked.dayOfMonth);
-      const key = cycleKey(cycleStart, id);
-      if (state.appliedCycles.has(key)) {
-        return { fixedExpenses: [...state.fixedExpenses, { ...fe, id }] };
-      }
-
-      const nextCycles = new Set(state.appliedCycles);
-      nextCycles.add(key);
-
-      return {
-        fixedExpenses: [...state.fixedExpenses, { ...fe, id }],
-        appliedCycles: nextCycles,
-        transactions: [
-          {
-            id: uid(),
-            type: "expense",
-            amount: fe.amount,
-            categoryId: fe.categoryId,
-            note: "Fixed expense",
-            date: cycleStart,
-            fixed: true,
-            fixedSourceId: id,
-            fixedCycleKey: cycleMonthKey(cycleStart),
-          },
-          ...state.transactions,
-        ],
-        wallet: {
-          ...state.wallet,
-          active: state.wallet.active - fe.amount,
-        },
-      };
-    });
-
-    queueSync(async () => {
-      const api = backend();
-      if (!api.isConfigured) return;
-      await api.addFixedExpense(fe);
-      await api.applyCycles();
-      const snapshot = await api.loadSnapshot();
-      if (snapshot) applySnapshot(set, snapshot);
-    });
-  },
-  updateFixedExpense: (id, patch) => {
+  transferToPocket: (pocketId, amount) => {
     set((state) => ({
-      fixedExpenses: state.fixedExpenses.map((item) =>
-        item.id === id ? { ...item, ...patch } : item,
+      wallet: { active: state.wallet.active - amount },
+      pockets: state.pockets.map((p) =>
+        p.id === pocketId
+          ? { ...p, balance: p.balance + amount }
+          : p
       ),
     }));
 
     queueSync(async () => {
       const api = backend();
       if (!api.isConfigured) return;
-      await api.updateFixedExpense(id, patch);
+      await api.transferToPocket(pocketId, amount);
     });
   },
-  deleteFixedExpense: (id) => {
+  transferFromPocket: (pocketId, amount) => {
     set((state) => ({
-      fixedExpenses: state.fixedExpenses.filter((item) => item.id !== id),
+      wallet: { active: state.wallet.active + amount },
+      pockets: state.pockets.map((p) =>
+        p.id === pocketId
+          ? { ...p, balance: p.balance - amount }
+          : p
+      ),
     }));
 
     queueSync(async () => {
       const api = backend();
       if (!api.isConfigured) return;
-      await api.deleteFixedExpense(id);
+      await api.transferFromPocket(pocketId, amount);
     });
   },
 }));

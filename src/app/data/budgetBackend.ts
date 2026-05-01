@@ -1,8 +1,7 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 import type {
 	Category,
-	FixedExpense,
-	FixedIncome,
+	Pocket,
 	Transaction,
 	Wallet,
 } from "../components/types";
@@ -12,8 +11,7 @@ export type BudgetSnapshot = {
 	wallet: Wallet;
 	categories: Category[];
 	transactions: Transaction[];
-	fixedIncomes: FixedIncome[];
-	fixedExpenses: FixedExpense[];
+	pockets: Pocket[];
 };
 
 type TransactionPatch = Partial<Pick<Transaction, "amount" | "date" | "note">>;
@@ -42,13 +40,11 @@ export type BudgetBackend = {
 	addTransaction: (transaction: Omit<Transaction, "id" | "date">) => Promise<void>;
 	updateTransaction: (id: string, patch: TransactionPatch) => Promise<void>;
 	deleteTransaction: (id: string) => Promise<void>;
-	addFixedIncome: (income: Omit<FixedIncome, "id">) => Promise<void>;
-	updateFixedIncome: (id: string, patch: Partial<Omit<FixedIncome, "id">>) => Promise<void>;
-	deleteFixedIncome: (id: string) => Promise<void>;
-	addFixedExpense: (expense: Omit<FixedExpense, "id">) => Promise<void>;
-	updateFixedExpense: (id: string, patch: Partial<Omit<FixedExpense, "id">>) => Promise<void>;
-	deleteFixedExpense: (id: string) => Promise<void>;
-	applyCycles: () => Promise<void>;
+	addPocket: (pocket: Omit<Pocket, "id">) => Promise<void>;
+	updatePocket: (id: string, patch: Partial<Omit<Pocket, "id">>) => Promise<void>;
+	deletePocket: (id: string) => Promise<void>;
+	transferToPocket: (pocketId: string, amount: number) => Promise<void>;
+	transferFromPocket: (pocketId: string, amount: number) => Promise<void>;
 };
 
 function must<T>(value: T | null, message: string): T {
@@ -76,21 +72,12 @@ function mapCategory(row: any): Category {
 	};
 }
 
-function mapFixedIncome(row: any): FixedIncome {
+function mapPocket(row: any): Pocket {
 	return {
 		id: row.id,
-		categoryId: row.category_id,
-		amount: row.amount,
-		dayOfMonth: row.day_of_month,
-	};
-}
-
-function mapFixedExpense(row: any): FixedExpense {
-	return {
-		id: row.id,
-		categoryId: row.category_id,
-		amount: row.amount,
-		fixedIncomeId: row.fixed_income_id,
+		name: row.name,
+		balance: row.balance,
+		isInvestment: row.is_investment,
 	};
 }
 
@@ -99,12 +86,10 @@ function mapTransaction(row: any): Transaction {
 		id: row.id,
 		type: row.type,
 		amount: row.amount,
-		categoryId: row.category_id,
+		categoryId: row.category_id ?? undefined,
+		pocketId: row.pocket_id ?? undefined,
 		note: row.note ?? "",
 		date: new Date(row.occurred_at).getTime(),
-		fixed: Boolean(row.fixed_source_id),
-		fixedSourceId: row.fixed_source_id ?? undefined,
-		fixedCycleKey: row.fixed_cycle_key ?? undefined,
 	};
 }
 
@@ -127,13 +112,11 @@ export function createBudgetBackendFromEnv(): BudgetBackend {
 			addTransaction: async () => undefined,
 			updateTransaction: async () => undefined,
 			deleteTransaction: async () => undefined,
-			addFixedIncome: async () => undefined,
-			updateFixedIncome: async () => undefined,
-			deleteFixedIncome: async () => undefined,
-			addFixedExpense: async () => undefined,
-			updateFixedExpense: async () => undefined,
-			deleteFixedExpense: async () => undefined,
-			applyCycles: async () => undefined,
+			addPocket: async () => undefined,
+			updatePocket: async () => undefined,
+			deletePocket: async () => undefined,
+			transferToPocket: async () => undefined,
+			transferFromPocket: async () => undefined,
 		};
 	}
 
@@ -180,57 +163,43 @@ export function createBudgetBackendFromEnv(): BudgetBackend {
 		},
 		loadSnapshot: async () => {
 			const userId = await getUserId(client);
-			await client.rpc("apply_cycles");
 
 			const [
 				profileRes,
 				walletRes,
 				categoriesRes,
+				pocketsRes,
 				txRes,
-				fixedIncomesRes,
-				fixedExpensesRes,
 			] = await Promise.all([
 				client.from("profiles").select("username").eq("id", userId).maybeSingle(),
 				client
 					.from("wallets")
-					.select("active,investment")
+					.select("active")
 					.eq("user_id", userId)
 					.maybeSingle(),
 				client.from("categories").select("id,name,type").eq("user_id", userId),
+				client.from("pockets").select("id,name,balance,is_investment").eq("user_id", userId),
 				client
 					.from("transactions")
-					.select(
-						"id,type,amount,category_id,note,occurred_at,fixed_source_id,fixed_cycle_key",
-					)
+					.select("id,type,amount,category_id,pocket_id,note,occurred_at")
 					.eq("user_id", userId)
 					.order("occurred_at", { ascending: false }),
-				client
-					.from("fixed_incomes")
-					.select("id,category_id,amount,day_of_month")
-					.eq("user_id", userId),
-				client
-					.from("fixed_expenses")
-					.select("id,category_id,amount,fixed_income_id")
-					.eq("user_id", userId),
 			]);
 
 			if (profileRes.error) throw profileRes.error;
 			if (walletRes.error) throw walletRes.error;
 			if (categoriesRes.error) throw categoriesRes.error;
+			if (pocketsRes.error) throw pocketsRes.error;
 			if (txRes.error) throw txRes.error;
-			if (fixedIncomesRes.error) throw fixedIncomesRes.error;
-			if (fixedExpensesRes.error) throw fixedExpensesRes.error;
 
 			return {
 				name: profileRes.data?.username ?? null,
 				wallet: {
 					active: walletRes.data?.active ?? 0,
-					investment: walletRes.data?.investment ?? 0,
 				},
 				categories: (categoriesRes.data ?? []).map(mapCategory),
+				pockets: (pocketsRes.data ?? []).map(mapPocket),
 				transactions: (txRes.data ?? []).map(mapTransaction),
-				fixedIncomes: (fixedIncomesRes.data ?? []).map(mapFixedIncome),
-				fixedExpenses: (fixedExpensesRes.data ?? []).map(mapFixedExpense),
 			};
 		},
 		setName: async (name) => {
@@ -246,7 +215,7 @@ export function createBudgetBackendFromEnv(): BudgetBackend {
 			const userId = await getUserId(client);
 			const { error } = await client
 				.from("wallets")
-				.update({ active: wallet.active, investment: wallet.investment })
+				.update({ active: wallet.active })
 				.eq("user_id", userId);
 			if (error) throw error;
 		},
@@ -267,8 +236,9 @@ export function createBudgetBackendFromEnv(): BudgetBackend {
 			const userId = await getUserId(client);
 			const { error } = await client.from("transactions").insert({
 				user_id: userId,
-				category_id: transaction.categoryId,
 				type: transaction.type,
+				category_id: transaction.categoryId ?? null,
+				pocket_id: transaction.pocketId ?? null,
 				amount: transaction.amount,
 				note: transaction.note,
 				occurred_at: toIso(Date.now()),
@@ -288,55 +258,62 @@ export function createBudgetBackendFromEnv(): BudgetBackend {
 			const { error } = await client.from("transactions").delete().eq("id", id);
 			if (error) throw error;
 		},
-		addFixedIncome: async (income) => {
+		addPocket: async (pocket) => {
 			const userId = await getUserId(client);
-			const { error } = await client.from("fixed_incomes").insert({
+			const { error } = await client.from("pockets").insert({
 				user_id: userId,
-				category_id: income.categoryId,
-				amount: income.amount,
-				day_of_month: income.dayOfMonth,
+				name: pocket.name,
+				balance: pocket.balance,
+				is_investment: pocket.isInvestment,
 			});
 			if (error) throw error;
 		},
-		updateFixedIncome: async (id, patch) => {
+		updatePocket: async (id, patch) => {
 			const row: Record<string, unknown> = {};
-			if (patch.categoryId != null) row.category_id = patch.categoryId;
-			if (patch.amount != null) row.amount = patch.amount;
-			if (patch.dayOfMonth != null) row.day_of_month = patch.dayOfMonth;
+			if (patch.name != null) row.name = patch.name;
+			if (patch.balance != null) row.balance = patch.balance;
+			if (patch.isInvestment != null) row.is_investment = patch.isInvestment;
 			if (Object.keys(row).length === 0) return;
-			const { error } = await client.from("fixed_incomes").update(row).eq("id", id);
+			const { error } = await client.from("pockets").update(row).eq("id", id);
 			if (error) throw error;
 		},
-		deleteFixedIncome: async (id) => {
-			const { error } = await client.from("fixed_incomes").delete().eq("id", id);
+		deletePocket: async (id) => {
+			const { error } = await client.from("pockets").delete().eq("id", id);
 			if (error) throw error;
 		},
-		addFixedExpense: async (expense) => {
+		transferToPocket: async (pocketId, amount) => {
 			const userId = await getUserId(client);
-			const { error } = await client.from("fixed_expenses").insert({
-				user_id: userId,
-				category_id: expense.categoryId,
-				amount: expense.amount,
-				fixed_income_id: expense.fixedIncomeId,
-			});
-			if (error) throw error;
+			
+			// Deduct from wallet
+			const { error: walletError } = await client
+				.from("wallets")
+				.update({ active: (row) => `${row}.active - ${amount}` })
+				.eq("user_id", userId);
+			if (walletError) throw walletError;
+
+			// Add to pocket
+			const { error: pocketError } = await client
+				.from("pockets")
+				.update({ balance: (row) => `${row}.balance + ${amount}` })
+				.eq("id", pocketId);
+			if (pocketError) throw pocketError;
 		},
-		updateFixedExpense: async (id, patch) => {
-			const row: Record<string, unknown> = {};
-			if (patch.categoryId != null) row.category_id = patch.categoryId;
-			if (patch.amount != null) row.amount = patch.amount;
-			if (patch.fixedIncomeId != null) row.fixed_income_id = patch.fixedIncomeId;
-			if (Object.keys(row).length === 0) return;
-			const { error } = await client.from("fixed_expenses").update(row).eq("id", id);
-			if (error) throw error;
-		},
-		deleteFixedExpense: async (id) => {
-			const { error } = await client.from("fixed_expenses").delete().eq("id", id);
-			if (error) throw error;
-		},
-		applyCycles: async () => {
-			const { error } = await client.rpc("apply_cycles");
-			if (error) throw error;
+		transferFromPocket: async (pocketId, amount) => {
+			const userId = await getUserId(client);
+
+			// Add to wallet
+			const { error: walletError } = await client
+				.from("wallets")
+				.update({ active: (row) => `${row}.active + ${amount}` })
+				.eq("user_id", userId);
+			if (walletError) throw walletError;
+
+			// Deduct from pocket
+			const { error: pocketError } = await client
+				.from("pockets")
+				.update({ balance: (row) => `${row}.balance - ${amount}` })
+				.eq("id", pocketId);
+			if (pocketError) throw pocketError;
 		},
 	};
 }
